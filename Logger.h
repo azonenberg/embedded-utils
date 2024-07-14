@@ -34,7 +34,7 @@
 
 //For now, assume any ARM platform is STM32 and anything else is antikernel-ipcores
 #ifdef __arm__
-#include "../peripheral/Timer.h"
+#include <peripheral/Timer.h>
 #else
 #include <APB_Timer.h>
 #endif

@@ -36,6 +36,10 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wvolatile"
 
+#if !defined(SIMULATION) && !defined(SOFTCORE_NO_IRQ)
+#include <stm32.h>
+#endif
+
 /**
 	@file
 	@author	Andrew D. Zonenberg
