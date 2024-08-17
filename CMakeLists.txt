@@ -17,4 +17,5 @@ add_library(embedded-utils STATIC
 target_include_directories(embedded-utils
 	PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
 	"$<TARGET_PROPERTY:stm32-cpp,INTERFACE_INCLUDE_DIRECTORIES>"
+	"$<TARGET_PROPERTY:common-embedded-platform-core,INTERFACE_INCLUDE_DIRECTORIES>"
 	)
