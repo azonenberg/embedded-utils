@@ -35,21 +35,19 @@
 APB_SpiFlashInterface::APB_SpiFlashInterface(volatile APB_SPIHostInterface* device, uint32_t clkdiv)
 	: m_device(device)
 {
-	#if !defined(SIMULATION) && !defined(SOFTCORE_NO_IRQ)
-		//Hold CS# high for a bit before trying to talk to it
-		SetCS(1);
-		g_logTimer.Sleep(500);
+	//Hold CS# high for a bit before trying to talk to it
+	SetCS(1);
+	g_logTimer.Sleep(500);
 
-		//Reset the flash
-		SetCS(0);
-		SendByte(0xf0);
-		SetCS(1);
+	//Reset the flash
+	SetCS(0);
+	SendByte(0xf0);
+	SetCS(1);
 
-		//Wait a bit
-		g_logTimer.Sleep(50);
-	#endif
+	//Wait a bit
+	g_logTimer.Sleep(250);
 
-	//Set the clock divider to /25 (10 MHz) to start
+	//Set the clock divider
 	m_device->clkdiv = clkdiv;
 
 	//Read CFI data (TODO: support SFDP for SFDP flashes)

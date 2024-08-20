@@ -32,6 +32,8 @@
 
 #if !defined(SIMULATION) && !defined(SOFTCORE_NO_IRQ)
 
+#include <APB_SPIHostInterface.h>
+
 /**
 	@file
 	@brief Declaration of APB_SpiFlashInterface
@@ -75,23 +77,39 @@ public:
 
 protected:
 
+	virtual void WaitUntilIdle()
+	{
+		#ifdef QSPI_CACHE_WORKAROUND
+
+			asm("dmb st");
+
+			while(true)
+			{
+				uint32_t va = m_device->status;
+				uint32_t vb = m_device->status2;
+				if(!va && !vb)
+					break;
+			}
+
+		#else
+			while(m_device->status)
+			{}
+		#endif
+	}
+
 	void SetCS(bool b)
-	{ m_device->cs_n = b; };
+	{ m_device->cs_n = b; }
 
 	void SendByte(uint8_t data)
 	{
 		m_device->data = data;
-
-		while(m_device->status != 0)
-		{}
+		WaitUntilIdle();
 	}
 
 	uint8_t ReadByte()
 	{
 		m_device->data = 0;
-
-		while(m_device->status != 0)
-		{}
+		WaitUntilIdle();
 
 		return m_device->data;
 	}
