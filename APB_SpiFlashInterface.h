@@ -119,6 +119,10 @@ protected:
 	uint32_t m_capacityBytes;
 	uint32_t m_maxWriteBlock;
 	uint32_t m_sectorSize;
+
+	void ReadSFDP();
+	void ReadSFDPParameter(uint8_t type, uint32_t offset, uint8_t nwords, uint8_t major, uint8_t minor);
+	void ReadSFDPParameter_JEDEC(uint32_t* param, uint8_t nwords, uint8_t major, uint8_t minor);
 };
 
 #endif
