@@ -300,3 +300,21 @@ void DoPrintf(CharacterDevice* target, const char* format, __builtin_va_list arg
 		target->PrintString(buf);
 	}
 }
+
+/**
+	@brief Remove spaces from trailing edge of a string
+ */
+void TrimSpaces(char* str)
+{
+	char* p = str + strlen(str) - 1;
+
+	while(p >= str)
+	{
+		if(isspace(*p))
+			*p = '\0';
+		else
+			break;
+
+		p --;
+	}
+}

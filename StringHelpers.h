@@ -38,4 +38,6 @@ char* utoa(unsigned int n, char* s);
 
 void DoPrintf(CharacterDevice* target, const char* format, __builtin_va_list args);
 
+void TrimSpaces(char* str);
+
 #endif
