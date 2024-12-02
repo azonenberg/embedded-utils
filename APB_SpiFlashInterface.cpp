@@ -163,6 +163,7 @@ void APB_SpiFlashInterface::ReadSFDP()
 		uint8_t major = sfdp[base+2];
 		uint8_t minor = sfdp[base+1];
 		g_log("Parameter %d: ID %d, rev %d.%d, length %d words, offset %08x\n",
+			i,
 			id,
 			major, minor,
 			nwords,
