@@ -60,8 +60,9 @@ APB_SpiFlashInterface::APB_SpiFlashInterface(volatile APB_SPIHostInterface* devi
 
 	enum vendor_t
 	{
-		VENDOR_CYPRESS = 0x01,
-		VENDOR_ISSI = 0x9d
+		VENDOR_CYPRESS	= 0x01,
+		VENDOR_ISSI 	= 0x9d,
+		VENDOR_WINBOND	= 0xef
 	};
 
 	const char* vendor = "unknown";
@@ -74,6 +75,10 @@ APB_SpiFlashInterface::APB_SpiFlashInterface(volatile APB_SPIHostInterface* devi
 
 		case VENDOR_ISSI:
 			vendor = "ISSI";
+			break;
+
+		case VENDOR_WINBOND:
+			vendor = "Winbond";
 			break;
 
 		default:
@@ -109,8 +114,8 @@ APB_SpiFlashInterface::APB_SpiFlashInterface(volatile APB_SPIHostInterface* devi
 		g_log("Max write block: %d bytes\n", m_maxWriteBlock);
 	}
 
-	//but all of our ISSI ones do
-	else if(vid == VENDOR_ISSI)
+	//but all of our ISSI and WInbond ones do
+	else if( (vid == VENDOR_ISSI) || (vid == VENDOR_WINBOND) )
 		ReadSFDP();
 }
 
@@ -136,13 +141,13 @@ void APB_SpiFlashInterface::ReadSFDP()
 
 	int sfdpMajor = sfdp[5];
 	int sfdpMinor = sfdp[4];
-	int sfdpParams = sfdp[6];
+	int sfdpParams = sfdp[6] + 1;
 	g_log("Found valid SFDP %d.%d header, %d parameter header(s)\n", sfdpMajor, sfdpMinor, sfdpParams);
 	LogIndenter li(g_log);
 
 	for(int i=0; i<sfdpParams; i++)
 	{
-		int base = 8 + i*i;
+		int base = 8 + i*8;
 		if(base > 504)
 		{
 			g_log(Logger::WARNING, "Skipping SFDP header %d (invalid offset %x)\n", i, base);
