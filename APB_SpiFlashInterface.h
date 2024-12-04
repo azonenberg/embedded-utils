@@ -118,11 +118,30 @@ protected:
 
 	uint32_t m_capacityBytes;
 	uint32_t m_maxWriteBlock;
+
+	//Erase configuration
+	uint8_t m_sectorEraseOpcode;
 	uint32_t m_sectorSize;
 
 	void ReadSFDP();
-	void ReadSFDPParameter(uint8_t type, uint32_t offset, uint8_t nwords, uint8_t major, uint8_t minor);
+	void ReadSFDPParameter(uint16_t type, uint32_t offset, uint8_t nwords, uint8_t major, uint8_t minor);
 	void ReadSFDPParameter_JEDEC(uint32_t* param, uint8_t nwords, uint8_t major, uint8_t minor);
+
+	uint32_t GetEraseTime(uint32_t code);
+
+	//Address mode
+	enum
+	{
+		ADDR_3BYTE,
+		ADDR_4BYTE
+	} m_addressLength;
+
+	enum vendor_t
+	{
+		VENDOR_CYPRESS	= 0x01,
+		VENDOR_ISSI 	= 0x9d,
+		VENDOR_WINBOND	= 0xef
+	} m_vendor;
 };
 
 #endif

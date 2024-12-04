@@ -34,6 +34,11 @@
 
 APB_SpiFlashInterface::APB_SpiFlashInterface(volatile APB_SPIHostInterface* device, uint32_t clkdiv)
 	: m_device(device)
+	, m_capacityBytes(0)
+	, m_maxWriteBlock(0)
+	, m_sectorEraseOpcode(0)
+	, m_sectorSize(0)
+	, m_addressLength(ADDR_3BYTE)
 {
 	//Hold CS# high for a bit before trying to talk to it
 	SetCS(1);
@@ -58,16 +63,9 @@ APB_SpiFlashInterface::APB_SpiFlashInterface(volatile APB_SPIHostInterface* devi
 		cfi[i] = ReadByte();
 	SetCS(1);
 
-	enum vendor_t
-	{
-		VENDOR_CYPRESS	= 0x01,
-		VENDOR_ISSI 	= 0x9d,
-		VENDOR_WINBOND	= 0xef
-	};
-
 	const char* vendor = "unknown";
-	auto vid = static_cast<vendor_t>(cfi[0]);
-	switch(vid)
+	m_vendor = static_cast<vendor_t>(cfi[0]);
+	switch(m_vendor)
 	{
 		case VENDOR_CYPRESS:
 			vendor = "Cypress";
@@ -92,8 +90,12 @@ APB_SpiFlashInterface::APB_SpiFlashInterface(volatile APB_SPIHostInterface* devi
 	uint32_t mbits = mbytes*8;
 	g_log("Capacity: %d MB (%d Mb)\n", mbytes, mbits);
 
+	//Default initialize some sector configuration
+	m_sectorSize = 0;
+	m_sectorEraseOpcode = 0xdc;
+
 	//For now, none of our standard Cypress/Infineon parts support SFDP
-	if(vid == VENDOR_CYPRESS)
+	if(m_vendor == VENDOR_CYPRESS)
 	{
 		//Sector architecture
 		if(cfi[4] == 0x00)
@@ -112,10 +114,13 @@ APB_SpiFlashInterface::APB_SpiFlashInterface(volatile APB_SPIHostInterface* devi
 
 		m_maxWriteBlock = 1 << (cfi[0x2a]);
 		g_log("Max write block: %d bytes\n", m_maxWriteBlock);
+
+		//Assume 4 byte addressing
+		m_addressLength = ADDR_4BYTE;
 	}
 
-	//but all of our ISSI and WInbond ones do
-	else if( (vid == VENDOR_ISSI) || (vid == VENDOR_WINBOND) )
+	//but all of our ISSI and Winbond ones do
+	else if( (m_vendor == VENDOR_ISSI) || (m_vendor == VENDOR_WINBOND) )
 		ReadSFDP();
 }
 
@@ -125,7 +130,7 @@ void APB_SpiFlashInterface::ReadSFDP()
 	uint8_t sfdp[512] = {0};
 	SetCS(0);
 	SendByte(0x5a);
-	SendByte(0x00);				//3-byte address
+	SendByte(0x00);				//3-byte address regardless of addressing mode
 	SendByte(0x00);
 	SendByte(0x00);
 	SendByte(0x00);				//dummy byte
@@ -158,11 +163,11 @@ void APB_SpiFlashInterface::ReadSFDP()
 			(sfdp[base + 6] << 16) |
 			(sfdp[base + 5] << 8) |
 			(sfdp[base + 4] << 0);
-		uint32_t id = sfdp[base+0];
+		uint16_t id = (sfdp[base + 7] << 8) | sfdp[base + 0];
 		uint8_t nwords = sfdp[base+3];
 		uint8_t major = sfdp[base+2];
 		uint8_t minor = sfdp[base+1];
-		g_log("Parameter %d: ID %d, rev %d.%d, length %d words, offset %08x\n",
+		g_log("Parameter %d: ID %04x, rev %d.%d, length %d words, offset %08x\n",
 			i,
 			id,
 			major, minor,
@@ -176,14 +181,14 @@ void APB_SpiFlashInterface::ReadSFDP()
 }
 
 void APB_SpiFlashInterface::ReadSFDPParameter(
-	uint8_t type,
+	uint16_t type,
 	uint32_t offset,
 	uint8_t nwords,
 	uint8_t major,
 	uint8_t minor)
 {
 	//Skip anything we don't understand
-	if(type != 0)
+	if(type != 0xff00)
 		return;
 
 	uint32_t param[256] = {0};
@@ -206,6 +211,34 @@ void APB_SpiFlashInterface::ReadSFDPParameter(
 	ReadSFDPParameter_JEDEC(param, nwords, major, minor);
 }
 
+/**
+	@brief Parse SFDP typical erase time
+ */
+uint32_t APB_SpiFlashInterface::GetEraseTime(uint32_t code)
+{
+	uint32_t timescale = 0;
+	switch( (code >> 5) & 3)
+	{
+		case 0:
+			timescale = 1;
+			break;
+
+		case 1:
+			timescale = 16;
+			break;
+
+		case 2:
+			timescale = 128;
+			break;
+
+		case 3:
+		default:
+			timescale = 1000;
+			break;
+	}
+	return ( (code & 0x1f ) + 1) * timescale;
+}
+
 void APB_SpiFlashInterface::ReadSFDPParameter_JEDEC(
 	uint32_t* param,
 	uint8_t nwords,
@@ -214,7 +247,7 @@ void APB_SpiFlashInterface::ReadSFDPParameter_JEDEC(
 {
 	if(major != 1)
 		return;
-	if(nwords < 9)
+	if(nwords < 10)
 		return;
 
 	if( (param[0] >> 21) & 1)
@@ -228,14 +261,17 @@ void APB_SpiFlashInterface::ReadSFDPParameter_JEDEC(
 	{
 		case 0:
 			g_log("3-byte addressing\n");
+			m_addressLength = ADDR_3BYTE;
 			break;
 
 		case 1:
 			g_log("3/4 byte switchable addressing\n");
+			m_addressLength = ADDR_3BYTE;
 			break;
 
 		case 2:
 			g_log("4-byte addressing\n");
+			m_addressLength = ADDR_4BYTE;
 			break;
 	}
 
@@ -251,7 +287,13 @@ void APB_SpiFlashInterface::ReadSFDPParameter_JEDEC(
 	{
 		uint32_t param4SizeBytes = (1 << param4logsize);
 		uint32_t param4SizeKbytes = param4SizeBytes / 1024;
-		g_log("Type 4 sector erase: op=%02x, size=%d kB\n", param4op, param4SizeKbytes);
+		uint32_t param4EraseTimeMs = GetEraseTime(param[9] >> 25);
+		g_log("Type 4 sector erase: op=%02x, size=%d kB, typical %d ms\n", param4op, param4SizeKbytes, param4EraseTimeMs);
+
+		//TODO: support multiple sector sizes
+		//For now just use the highest numbered (normally largest) one we support
+		m_sectorEraseOpcode = param4op;
+		m_sectorSize = param4SizeBytes;
 	}
 
 	uint8_t param3logsize = (param[8] >> 0) & 0xff;
@@ -260,7 +302,16 @@ void APB_SpiFlashInterface::ReadSFDPParameter_JEDEC(
 	{
 		uint32_t param3SizeBytes = (1 << param3logsize);
 		uint32_t param3SizeKbytes = param3SizeBytes / 1024;
-		g_log("Type 3 sector erase: op=%02x, size=%d kB\n", param3op, param3SizeKbytes);
+		uint32_t param3EraseTimeMs = GetEraseTime(param[9] >> 18);
+		g_log("Type 3 sector erase: op=%02x, size=%d kB, typical %d ms\n", param3op, param3SizeKbytes, param3EraseTimeMs);
+
+		//TODO: support multiple sector sizes
+		//For now just use the highest numbered (normally largest) one we support
+		if(!m_sectorSize)
+		{
+			m_sectorEraseOpcode = param3op;
+			m_sectorSize = param3SizeBytes;
+		}
 	}
 
 	uint8_t param2logsize = (param[7] >> 16) & 0xff;
@@ -269,7 +320,16 @@ void APB_SpiFlashInterface::ReadSFDPParameter_JEDEC(
 	{
 		uint32_t param2SizeBytes = (1 << param2logsize);
 		uint32_t param2SizeKbytes = param2SizeBytes / 1024;
-		g_log("Type 2 sector erase: op=%02x, size=%d kB\n", param2op, param2SizeKbytes);
+		uint32_t param2EraseTimeMs = GetEraseTime(param[9] >> 11);
+		g_log("Type 2 sector erase: op=%02x, size=%d kB, typical %d ms\n", param2op, param2SizeKbytes, param2EraseTimeMs);
+
+		//TODO: support multiple sector sizes
+		//For now just use the highest numbered (normally largest) one we support
+		if(!m_sectorSize)
+		{
+			m_sectorEraseOpcode = param2op;
+			m_sectorSize = param2SizeBytes;
+		}
 	}
 
 	uint8_t param1logsize = (param[7] >> 0) & 0xff;
@@ -278,8 +338,49 @@ void APB_SpiFlashInterface::ReadSFDPParameter_JEDEC(
 	{
 		uint32_t param1SizeBytes = (1 << param1logsize);
 		uint32_t param1SizeKbytes = param1SizeBytes / 1024;
-		g_log("Type 1 sector erase: op=%02x, size=%d kB\n", param1op, param1SizeKbytes);
+		uint32_t param1EraseTimeMs = GetEraseTime(param[9] >> 4);
+		g_log("Type 1 sector erase: op=%02x, size=%d kB, typical %d ms\n", param1op, param1SizeKbytes, param1EraseTimeMs);
+
+		//TODO: support multiple sector sizes
+		//For now just use the highest numbered (normally largest) one we support
+		if(!m_sectorSize)
+		{
+			m_sectorEraseOpcode = param1op;
+			m_sectorSize = param1SizeBytes;
+		}
 	}
+
+	g_log("Selecting opcode 0x%02x for %d kB sector as default erase opcode\n",
+		m_sectorEraseOpcode, m_sectorSize / 1024);
+
+	uint32_t maxEraseTime = (param[10] >> 24) & 0x1f;
+	switch( (param[10] >> 29) & 3)
+	{
+		case 0:
+			maxEraseTime *= 16;
+			break;
+
+		case 1:
+			maxEraseTime *= 256;
+			break;
+
+		case 2:
+			maxEraseTime *= 4000;
+			break;
+
+		case 3:
+		default:
+			maxEraseTime *= 64000;
+			break;
+	}
+	g_log("Full chip erase time: typical %d ms\n", maxEraseTime);
+
+	uint32_t maxEraseScale = ((param[9] & 0xf) + 1) * 2;
+	g_log("Worst case erase time is %d times typical\n", maxEraseScale);
+
+	uint32_t pagelog = (param[10] >> 4) & 0xf;
+	m_maxWriteBlock = 1 << (pagelog);
+	g_log("Max write block: %d bytes\n", m_maxWriteBlock);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -291,8 +392,9 @@ bool APB_SpiFlashInterface::EraseSector(uint32_t start)
 
 	//Erase the page
 	SetCS(0);
-	SendByte(0xdc);
-	SendByte( (start >> 24) & 0xff);
+	SendByte(m_sectorEraseOpcode);
+	if(m_addressLength == ADDR_4BYTE)
+		SendByte( (start >> 24) & 0xff);
 	SendByte( (start >> 16) & 0xff);
 	SendByte( (start >> 8) & 0xff);
 	SendByte( (start >> 0) & 0xff);
@@ -342,8 +444,19 @@ uint8_t APB_SpiFlashInterface::GetConfigRegister()
 void APB_SpiFlashInterface::ReadData(uint32_t addr, uint8_t* data, uint32_t len)
 {
 	SetCS(0);
-	SendByte(0x0c);
-	SendByte( (addr >> 24) & 0xff);
+
+	//4-byte 1-1-1 fast read instruction is always 0x0c (not in SFDP)
+	if(m_addressLength == ADDR_4BYTE)
+	{
+		SendByte(0x0c);
+		SendByte( (addr >> 24) & 0xff);
+	}
+
+	//3-byte 1-1-1 fast read instruction is always 0x0b (not in SFDP)
+	else
+		SendByte(0x0b);
+
+	//Send rest of address
 	SendByte( (addr >> 16) & 0xff);
 	SendByte( (addr >> 8) & 0xff);
 	SendByte( (addr >> 0) & 0xff);
@@ -356,7 +469,6 @@ void APB_SpiFlashInterface::ReadData(uint32_t addr, uint8_t* data, uint32_t len)
 }
 
 //TODO: read back ECCSR to verify?
-
 bool APB_SpiFlashInterface::WriteData(uint32_t addr, const uint8_t* data, uint32_t len)
 {
 	//TODO: chunk big writes
@@ -370,8 +482,18 @@ bool APB_SpiFlashInterface::WriteData(uint32_t addr, const uint8_t* data, uint32
 
 	//Write it
 	SetCS(0);
-	SendByte(0x12);
-	SendByte( (addr >> 24) & 0xff);
+
+	//4-byte 1-1-1 write instruction is always 0x12
+	if(m_addressLength == ADDR_4BYTE)
+	{
+		SendByte(0x12);
+		SendByte( (addr >> 24) & 0xff);
+	}
+
+	///3-byte 1-1-1 write instruction is always 0x02
+	else
+		SendByte(0x02);
+
 	SendByte( (addr >> 16) & 0xff);
 	SendByte( (addr >> 8) & 0xff);
 	SendByte( (addr >> 0) & 0xff);
@@ -385,9 +507,13 @@ bool APB_SpiFlashInterface::WriteData(uint32_t addr, const uint8_t* data, uint32
 
 	WriteDisable();
 
-	//Check for write failure
-	if( (GetStatusRegister1() & 0x40) == 0x40)
-		return false;
+	//Check for write failure on Cypress parts
+	//(this bit is block protection on ISSI, checking it will lead to false failure detections!)
+	if(m_vendor == VENDOR_CYPRESS)
+	{
+		if( (GetStatusRegister1() & 0x40) == 0x40)
+			return false;
+	}
 
 	return true;
 }
