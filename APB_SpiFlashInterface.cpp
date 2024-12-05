@@ -462,8 +462,38 @@ void APB_SpiFlashInterface::ReadData(uint32_t addr, uint8_t* data, uint32_t len)
 	SendByte( (addr >> 0) & 0xff);
 	ReadByte();	//throw away dummy byte
 
-	for(uint32_t i=0; i<len; i++)
-		data[i] = ReadByte();
+	//Read data in blocks of up to 256 bytes for better performance
+	const uint32_t block = 256;
+	for(uint32_t i=0; i<len; i += block)
+	{
+		//Get size of this block
+		uint32_t curblock = block;
+		if(i+block >= len)
+			curblock = len - i;
+
+		//Request the read
+		m_device->burst_rdlen = curblock;
+		WaitUntilIdle();
+
+		//Read the reply
+		//TODO: use a DMA for this
+		uint32_t wordblock = curblock / 4;
+		for(uint32_t j=0; j<wordblock; j++)
+		{
+			uint32_t tmp = m_device->burst_rxbuf[j];
+
+			//bounds check burst read
+			uint32_t base = i + j*4;
+			uint32_t rdlen = 4;
+			if(base+4 >= len)
+				rdlen = len - base;
+
+			memcpy(data + base, &tmp, rdlen);
+		}
+	}
+
+	//for(uint32_t i=0; i<len; i++)
+	//	data[i] = ReadByte();
 
 	SetCS(1);
 }
