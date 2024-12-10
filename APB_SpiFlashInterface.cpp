@@ -441,7 +441,15 @@ uint8_t APB_SpiFlashInterface::GetConfigRegister()
 	return ret;
 }
 
-void APB_SpiFlashInterface::ReadData(uint32_t addr, uint8_t* data, uint32_t len)
+void APB_SpiFlashInterface::ReadData(
+	uint32_t addr,
+	uint8_t* data,
+	uint32_t len
+
+	#ifdef FLASH_USE_MDMA
+		, MDMAChannel* dmaChannel
+	#endif
+	)
 {
 	SetCS(0);
 
@@ -462,6 +470,30 @@ void APB_SpiFlashInterface::ReadData(uint32_t addr, uint8_t* data, uint32_t len)
 	SendByte( (addr >> 0) & 0xff);
 	ReadByte();	//throw away dummy byte
 
+	#ifdef FLASH_USE_MDMA
+		//Configure the DMA
+		//TODO: we should only have to do this once, outside of the flash read or something?
+		auto& tc = dmaChannel->GetTransferConfig();
+		tc.EnableWriteBuffer();
+		tc.SetSoftwareRequestMode();
+		tc.EnablePackMode();
+		tc.SetTriggerMode(MDMATransferConfig::MODE_LINKED_LIST);
+		tc.SetSourcePointerMode(
+			MDMATransferConfig::SOURCE_INCREMENT,
+			MDMATransferConfig::SOURCE_INC_32,
+			MDMATransferConfig::SOURCE_SIZE_32);
+		tc.SetDestPointerMode(
+			MDMATransferConfig::DEST_INCREMENT,
+			MDMATransferConfig::DEST_INC_32,
+			MDMATransferConfig::DEST_SIZE_32);
+		tc.SetBufferTransactionLength(4);
+		tc.SetTransferBytes(4);
+		tc.SetSourceBurstLength(MDMATransferConfig::SOURCE_BURST_4);
+
+		//For now, assume the destination is always in DTCM
+		tc.SetBusConfig(MDMATransferConfig::SRC_AXI, MDMATransferConfig::DST_TCM);
+	#endif
+
 	//Read data in blocks of up to 256 bytes for better performance
 	const uint32_t block = 256;
 	for(uint32_t i=0; i<len; i += block)
@@ -475,21 +507,36 @@ void APB_SpiFlashInterface::ReadData(uint32_t addr, uint8_t* data, uint32_t len)
 		m_device->burst_rdlen = curblock;
 		WaitUntilIdle();
 
-		//Read the reply
-		//TODO: use a DMA for this
 		uint32_t wordblock = curblock / 4;
-		for(uint32_t j=0; j<wordblock; j++)
-		{
-			uint32_t tmp = m_device->burst_rxbuf[j];
+		if(curblock & 3)
+			wordblock ++;
 
-			//bounds check burst read
-			uint32_t base = i + j*4;
-			uint32_t rdlen = 4;
-			if(base+4 >= len)
-				rdlen = len - base;
+		#ifdef FLASH_USE_MDMA
 
-			memcpy(data + base, &tmp, rdlen);
-		}
+			tc.SetTransferBlockConfig(4, wordblock);
+			tc.SetSourcePointer(&m_device->burst_rxbuf[0]);
+			tc.SetDestPointer(data + i);
+			tc.AppendTransfer(nullptr);
+			dmaChannel->Start();
+			dmaChannel->WaitIdle();
+
+		#else
+
+			//Read the reply
+			for(uint32_t j=0; j<wordblock; j++)
+			{
+				uint32_t tmp = m_device->burst_rxbuf[j];
+
+				//bounds check burst read
+				uint32_t base = i + j*4;
+				uint32_t rdlen = 4;
+				if(base+4 >= len)
+					rdlen = len - base;
+
+				memcpy(data + base, &tmp, rdlen);
+			}
+		#endif
+
 	}
 
 	//for(uint32_t i=0; i<len; i++)

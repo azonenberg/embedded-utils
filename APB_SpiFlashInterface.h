@@ -34,6 +34,12 @@
 
 #include <APB_SPIHostInterface.h>
 
+#define FLASH_USE_MDMA
+
+#ifdef FLASH_USE_MDMA
+#include <peripheral/MDMA.h>
+#endif
+
 /**
 	@file
 	@brief Declaration of APB_SpiFlashInterface
@@ -66,7 +72,16 @@ public:
 	uint32_t GetEraseBlockSize()
 	{ return m_sectorSize; }
 
-	void ReadData(uint32_t addr, uint8_t* data, uint32_t len);
+	void ReadData(
+		uint32_t addr,
+		uint8_t* data,
+		uint32_t len
+
+		#ifdef FLASH_USE_MDMA
+			, MDMAChannel* dmaChannel = nullptr
+		#endif
+		);
+
 	bool WriteData(uint32_t addr, const uint8_t* data, uint32_t len);
 
 	uint32_t GetMinWriteBlockSize()
@@ -142,6 +157,9 @@ protected:
 		VENDOR_ISSI 	= 0x9d,
 		VENDOR_WINBOND	= 0xef
 	} m_vendor;
+
+	//TODO: non-DMA option
+
 };
 
 #endif
