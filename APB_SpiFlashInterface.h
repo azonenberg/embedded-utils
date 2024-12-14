@@ -90,6 +90,9 @@ public:
 	uint32_t GetMaxWriteBlockSize()
 	{ return m_maxWriteBlock; }
 
+	uint32_t GetCapacity()
+	{ return m_capacityBytes; }
+
 protected:
 
 	virtual void WaitUntilIdle()
@@ -160,6 +163,9 @@ protected:
 
 	//TODO: non-DMA option
 
+	const char* GetCypressPartName(uint16_t npart);
+	const char* GetISSIPartName(uint16_t npart);
+	const char* GetWinbondPartName(uint16_t npart);
 };
 
 #endif

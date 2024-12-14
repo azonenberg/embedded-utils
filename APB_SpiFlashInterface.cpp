@@ -64,27 +64,30 @@ APB_SpiFlashInterface::APB_SpiFlashInterface(volatile APB_SPIHostInterface* devi
 	SetCS(1);
 
 	const char* vendor = "unknown";
+	const char* part = "unknown";
 	m_vendor = static_cast<vendor_t>(cfi[0]);
+	uint16_t npart = (cfi[1] << 8)  | cfi[2];
 	switch(m_vendor)
 	{
 		case VENDOR_CYPRESS:
 			vendor = "Cypress";
+			part = GetCypressPartName(npart);
 			break;
 
 		case VENDOR_ISSI:
 			vendor = "ISSI";
+			part = GetISSIPartName(npart);
 			break;
 
 		case VENDOR_WINBOND:
 			vendor = "Winbond";
+			part = GetWinbondPartName(npart);
 			break;
 
 		default:
 			break;
 	}
-
-	//TODO: is all of this Cypress/Spansion/Infineon specific? the CFI stuff comes later
-	g_log("Flash vendor: 0x%02x (%s)\n", cfi[0], vendor);
+	g_log("Flash part: 0x%02x %02x %02x (%s %s)\n", cfi[0], cfi[1], cfi[2], vendor, part);
 	m_capacityBytes = (1 << cfi[2]);
 	uint32_t mbytes = m_capacityBytes / (1024 * 1024);
 	uint32_t mbits = mbytes*8;
@@ -122,6 +125,43 @@ APB_SpiFlashInterface::APB_SpiFlashInterface(volatile APB_SPIHostInterface* devi
 	//but all of our ISSI and Winbond ones do
 	else if( (m_vendor == VENDOR_ISSI) || (m_vendor == VENDOR_WINBOND) )
 		ReadSFDP();
+}
+
+const char* APB_SpiFlashInterface::GetCypressPartName(uint16_t npart)
+{
+	switch(npart)
+	{
+		case 0x0217:	return "S25FS064S";
+		case 0x0219:	return "S25FL256S";
+		case 0x2018:	return "S25FL128S";
+		default:		return "Unknown";
+	}
+}
+
+const char* APB_SpiFlashInterface::GetISSIPartName(uint16_t npart)
+{
+	switch(npart)
+	{
+		case 0x6019:	return "IS25LP256D (3.3V)";
+		case 0x7019:	return "IS25WP256D (1.8V)";
+		default:		return "Unknown";
+	}
+}
+
+const char* APB_SpiFlashInterface::GetWinbondPartName(uint16_t npart)
+{
+	switch(npart)
+	{
+		case 0x4014:	return "W25Q80BV";
+		case 0x4018:	return "W25Q128FV/JV";
+		case 0x4019:	return "W25R256JV";
+		case 0x6015:	return "W25Q16DW";
+		case 0x6016:	return "W25Q32FW";
+		case 0x6018:	return "W25Q128FV QPI";
+		case 0x7018:	return "W25Q128JV-IM/JM";
+		case 0xaa21:	return "W25N01GV";			//TODO: NAND is probably not fully supported
+		default:		return "Unknown";
+	}
 }
 
 void APB_SpiFlashInterface::ReadSFDP()
