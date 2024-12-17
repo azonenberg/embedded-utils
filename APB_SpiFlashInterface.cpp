@@ -481,6 +481,9 @@ uint8_t APB_SpiFlashInterface::GetConfigRegister()
 	return ret;
 }
 
+#ifdef HAVE_ITCM
+__attribute__((section(".tcmtext")))
+#endif
 void APB_SpiFlashInterface::ReadData(
 	uint32_t addr,
 	uint8_t* data,
@@ -513,6 +516,9 @@ void APB_SpiFlashInterface::ReadData(
 	#ifdef FLASH_USE_MDMA
 		//Configure the DMA
 		//TODO: we should only have to do this once, outside of the flash read or something?
+		//Use 8-bit writes so we can write to unaligned buffers.
+		//The FMC is slow enough that the DMA read is the bottleneck, writes won't be as much of an issue.
+		//TODO: add argument so we can enable 32-bit if we know the dest is aligned??
 		auto& tc = dmaChannel->GetTransferConfig();
 		tc.EnableWriteBuffer();
 		tc.SetSoftwareRequestMode();
@@ -524,8 +530,8 @@ void APB_SpiFlashInterface::ReadData(
 			MDMATransferConfig::SOURCE_SIZE_32);
 		tc.SetDestPointerMode(
 			MDMATransferConfig::DEST_INCREMENT,
-			MDMATransferConfig::DEST_INC_32,
-			MDMATransferConfig::DEST_SIZE_32);
+			MDMATransferConfig::DEST_INC_8,
+			MDMATransferConfig::DEST_SIZE_8);
 		tc.SetBufferTransactionLength(4);
 		tc.SetTransferBytes(4);
 		tc.SetSourceBurstLength(MDMATransferConfig::SOURCE_BURST_4);
