@@ -643,11 +643,15 @@ void APB_SpiFlashInterface::ReadData(
 			curblock = len - i;
 
 		//Request the read
+		//Only block until idle for x1 SPI
+		//(quad supports PREADY backpressure when reading too soon)
 		if(m_quadReadAvailable)
 			m_device->quad_burst_rdlen = curblock;
 		else
+		{
 			m_device->burst_rdlen = curblock;
-		WaitUntilIdle();
+			WaitUntilIdle();
+		}
 
 		uint32_t wordblock = curblock / 4;
 		if(curblock & 3)
