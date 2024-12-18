@@ -166,6 +166,17 @@ protected:
 	const char* GetCypressPartName(uint16_t npart);
 	const char* GetISSIPartName(uint16_t npart);
 	const char* GetWinbondPartName(uint16_t npart);
+
+	//Indicates peripheral is quad capable
+	bool m_quadCapable;
+
+	//Normal fast read instruction
+	uint8_t m_fastReadInstruction;
+
+	//Quad read instruction
+	bool m_quadReadAvailable;
+	uint8_t m_quadReadInstruction;
+	uint8_t m_quadReadDummyClocks;
 };
 
 #endif

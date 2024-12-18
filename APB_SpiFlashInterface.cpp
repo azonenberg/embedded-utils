@@ -39,6 +39,10 @@ APB_SpiFlashInterface::APB_SpiFlashInterface(volatile APB_SPIHostInterface* devi
 	, m_sectorEraseOpcode(0)
 	, m_sectorSize(0)
 	, m_addressLength(ADDR_3BYTE)
+	, m_fastReadInstruction(0x0b)
+	, m_quadReadAvailable(false)
+	, m_quadReadInstruction(0)
+	, m_quadReadDummyClocks(0)
 {
 	//Hold CS# high for a bit before trying to talk to it
 	SetCS(1);
@@ -54,6 +58,18 @@ APB_SpiFlashInterface::APB_SpiFlashInterface(volatile APB_SPIHostInterface* devi
 
 	//Set the clock divider
 	m_device->clkdiv = clkdiv;
+
+	//See if we're quad capable
+	if(m_device->quad_capable)
+	{
+		g_log("Host PHY is QSPI capable\n");
+		m_quadCapable = true;
+	}
+	else
+	{
+		g_log("Host PHY is not QSPI capable\n");
+		m_quadCapable = false;
+	}
 
 	//Read CFI data
 	uint8_t cfi[512];
@@ -125,6 +141,33 @@ APB_SpiFlashInterface::APB_SpiFlashInterface(volatile APB_SPIHostInterface* devi
 	//but all of our ISSI and Winbond ones do
 	else if( (m_vendor == VENDOR_ISSI) || (m_vendor == VENDOR_WINBOND) )
 		ReadSFDP();
+
+	//TODO: figure out how to do quad mode stuffs
+
+	//If it's an ISSI part, set the QE bit in status register 1
+	if(m_vendor == VENDOR_ISSI)
+	{
+		//Read the status register
+		SetCS(0);
+		SendByte(0x05);
+		uint8_t sr = ReadByte();
+		SetCS(1);
+		//g_log("Initial status register: %02x\n", sr);
+
+		if( (sr & 0x40) == 0)
+		{
+			sr |= 0x40;
+			g_log("Enable QE, write %02x\n", sr);
+
+			//Write it
+			SetCS(0);
+			SendByte(0x01);
+			SendByte(sr);
+			SetCS(1);
+		}
+		else
+			g_log("QE bit already set\n");
+	}
 }
 
 const char* APB_SpiFlashInterface::GetCypressPartName(uint16_t npart)
@@ -290,29 +333,64 @@ void APB_SpiFlashInterface::ReadSFDPParameter_JEDEC(
 	if(nwords < 10)
 		return;
 
-	if( (param[0] >> 21) & 1)
-	{
-		uint8_t fastReadOpcode = (param[3] >> 8) & 0xff;
-		uint8_t fastReadDummy = param[3] & 0x1f;
-		g_log("1-4-4 fast read supported, opcode %02x, %d dummy clocks\n", fastReadOpcode, fastReadDummy);
-	}
-
 	switch( (param[0] >> 17) & 3)
 	{
 		case 0:
 			g_log("3-byte addressing\n");
+			m_fastReadInstruction = 0x0b;
 			m_addressLength = ADDR_3BYTE;
 			break;
 
 		case 1:
 			g_log("3/4 byte switchable addressing\n");
+			m_fastReadInstruction = 0x0b;
 			m_addressLength = ADDR_3BYTE;
 			break;
 
 		case 2:
 			g_log("4-byte addressing\n");
+			m_fastReadInstruction = 0x0c;
 			m_addressLength = ADDR_4BYTE;
 			break;
+	}
+
+	//Only check for quad read instructions if the peripheral is quad capable
+	if(m_quadCapable)
+	{
+		if( (param[0] >> 21) & 1)
+		{
+			/*
+			m_quadReadAvailable = true;
+			m_quadReadInstruction = (param[2] >> 8) & 0xff;
+			m_quadReadDummyClocks = param[2] & 0x1f;
+			g_log("1-4-4 fast read supported, opcode %02x, %d dummy clocks\n", m_quadReadInstruction, m_quadReadDummyClocks);
+			*/
+
+			uint8_t op = (param[2] >> 8) & 0xff;
+			uint8_t dummy = param[2] & 0x1f;
+			g_log("1-4-4 fast read supported, opcode %02x, %d dummy clocks\n", op, dummy);
+		}
+
+		//for now we only support 1-1-4 read
+		if( (param[0] >> 22) & 1)
+		{
+			m_quadReadAvailable = true;
+			m_quadReadInstruction = (param[2] >> 24) & 0xff;
+			m_quadReadDummyClocks = (param[2] >> 16) & 0x1f;
+			g_log("1-1-4 fast read supported, opcode %02x, %d dummy clocks\n", m_quadReadInstruction, m_quadReadDummyClocks);
+
+			//WORKAROUND: if this is an ISSI flash chip, it will probably claim to only have 3 byte addressing
+			//even if it's >128 Mbits. Use 4FRQO 0x6c
+			if( (m_vendor == VENDOR_ISSI) && (m_capacityBytes > 0x100'0000) && (m_addressLength == ADDR_3BYTE) )
+			{
+				g_log(
+					"Buggy ISSI >128 Mbit flash which claims 3-byte address in SFDP but may be 3/4 depending on mode bits. "
+					"Using 4-byte 4FRQO and 4FRD instructions instead\n");
+				m_addressLength = ADDR_4BYTE;
+				m_fastReadInstruction = 0x0c;
+				m_quadReadInstruction = 0x6c;
+			}
+		}
 	}
 
 	uint8_t eraseOpcode = (param[0] >> 8) & 0xff;
@@ -496,22 +574,37 @@ void APB_SpiFlashInterface::ReadData(
 {
 	SetCS(0);
 
-	//4-byte 1-1-1 fast read instruction is always 0x0c (not in SFDP)
-	if(m_addressLength == ADDR_4BYTE)
+	//If we have a 1-1-4 quad read available, use it
+	if(m_quadReadAvailable)
 	{
-		SendByte(0x0c);
-		SendByte( (addr >> 24) & 0xff);
+		SendByte(m_quadReadInstruction);
+
+		if(m_addressLength == ADDR_4BYTE)
+			SendByte( (addr >> 24) & 0xff);
 	}
 
-	//3-byte 1-1-1 fast read instruction is always 0x0b (not in SFDP)
+	//3 or 4-byte 1-1-1 fast read instruction as appropriate
 	else
-		SendByte(0x0b);
+	{
+		SendByte(m_fastReadInstruction);
+
+		if(m_addressLength == ADDR_4BYTE)
+			SendByte( (addr >> 24) & 0xff);
+	}
 
 	//Send rest of address
 	SendByte( (addr >> 16) & 0xff);
 	SendByte( (addr >> 8) & 0xff);
 	SendByte( (addr >> 0) & 0xff);
-	ReadByte();	//throw away dummy byte
+
+	//Read and discard dummy bytes without using DMA for now
+	if(m_quadReadAvailable)
+	{
+		m_device->quad_burst_rdlen = (m_quadReadDummyClocks / 2);
+		WaitUntilIdle();
+	}
+	else
+		ReadByte();	//throw away dummy byte
 
 	#ifdef FLASH_USE_MDMA
 		//Configure the DMA
@@ -550,7 +643,10 @@ void APB_SpiFlashInterface::ReadData(
 			curblock = len - i;
 
 		//Request the read
-		m_device->burst_rdlen = curblock;
+		if(m_quadReadAvailable)
+			m_device->quad_burst_rdlen = curblock;
+		else
+			m_device->burst_rdlen = curblock;
 		WaitUntilIdle();
 
 		uint32_t wordblock = curblock / 4;
