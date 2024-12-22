@@ -95,6 +95,11 @@ APB_SpiFlashInterface::APB_SpiFlashInterface(volatile APB_SPIHostInterface* devi
 			part = GetISSIPartName(npart);
 			break;
 
+		case VENDOR_PUYA:
+			vendor = "Puya";
+			//part = GetCypressPartName(npart);
+			break;
+
 		case VENDOR_WINBOND:
 			vendor = "Winbond";
 			part = GetWinbondPartName(npart);
@@ -106,8 +111,12 @@ APB_SpiFlashInterface::APB_SpiFlashInterface(volatile APB_SPIHostInterface* devi
 	g_log("Flash part: 0x%02x %02x %02x (%s %s)\n", cfi[0], cfi[1], cfi[2], vendor, part);
 	m_capacityBytes = (1 << cfi[2]);
 	uint32_t mbytes = m_capacityBytes / (1024 * 1024);
-	uint32_t mbits = mbytes*8;
-	g_log("Capacity: %d MB (%d Mb)\n", mbytes, mbits);
+	uint32_t kbytes = m_capacityBytes / (1024);
+	uint32_t mbits = m_capacityBytes / (1024 * 128);
+	if(mbytes == 0)
+		g_log("Capacity: %d kB (%d Mb)\n", kbytes, mbits);
+	else
+		g_log("Capacity: %d MB (%d Mb)\n", mbytes, mbits);
 
 	//Default initialize some sector configuration
 	m_sectorSize = 0;

@@ -157,6 +157,7 @@ protected:
 	enum vendor_t
 	{
 		VENDOR_CYPRESS	= 0x01,
+		VENDOR_PUYA		= 0x85,
 		VENDOR_ISSI 	= 0x9d,
 		VENDOR_WINBOND	= 0xef
 	} m_vendor;
