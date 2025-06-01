@@ -90,6 +90,11 @@ APB_SpiFlashInterface::APB_SpiFlashInterface(volatile APB_SPIHostInterface* devi
 			part = GetCypressPartName(npart);
 			break;
 
+		case VENDOR_MICRON:
+			vendor = "Micron";
+			part = GetMicronPartName(npart);
+			break;
+
 		case VENDOR_ISSI:
 			vendor = "ISSI";
 			part = GetISSIPartName(npart);
@@ -122,34 +127,42 @@ APB_SpiFlashInterface::APB_SpiFlashInterface(volatile APB_SPIHostInterface* devi
 	m_sectorSize = 0;
 	m_sectorEraseOpcode = 0xdc;
 
-	//For now, none of our standard Cypress/Infineon parts support SFDP
-	if(m_vendor == VENDOR_CYPRESS)
+	switch(m_vendor)
 	{
-		//Sector architecture
-		if(cfi[4] == 0x00)
-		{
-			g_log("Uniform 256 kB sectors\n");
-			m_sectorSize = 256 * 1024;
-		}
-		else
-		{
-			g_log("4 kB parameter + 64 kB data sectors\n");
-			m_sectorSize = 64 * 1024;
-		}
+		//For now, none of our standard Cypress/Infineon parts support SFDP
+		case VENDOR_CYPRESS:
+			//Sector architecture
+			if(cfi[4] == 0x00)
+			{
+				g_log("Uniform 256 kB sectors\n");
+				m_sectorSize = 256 * 1024;
+			}
+			else
+			{
+				g_log("4 kB parameter + 64 kB data sectors\n");
+				m_sectorSize = 64 * 1024;
+			}
 
-		if(cfi[5] == 0x80)
-			g_log("Part ID: S25FL%dS%c%c\n", mbits, cfi[6], cfi[7]);
+			if(cfi[5] == 0x80)
+				g_log("Part ID: S25FL%dS%c%c\n", mbits, cfi[6], cfi[7]);
 
-		m_maxWriteBlock = 1 << (cfi[0x2a]);
-		g_log("Max write block: %d bytes\n", m_maxWriteBlock);
+			m_maxWriteBlock = 1 << (cfi[0x2a]);
+			g_log("Max write block: %d bytes\n", m_maxWriteBlock);
 
-		//Assume 4 byte addressing
-		m_addressLength = ADDR_4BYTE;
+			//Assume 4 byte addressing
+			m_addressLength = ADDR_4BYTE;
+			break;
+
+		//but all of our ISSI, Micron, and Winbond ones do
+		case VENDOR_ISSI:
+		case VENDOR_WINBOND:
+		case VENDOR_MICRON:
+			ReadSFDP();
+			break;
+
+		default:
+			break;
 	}
-
-	//but all of our ISSI and Winbond ones do
-	else if( (m_vendor == VENDOR_ISSI) || (m_vendor == VENDOR_WINBOND) )
-		ReadSFDP();
 
 	//TODO: figure out how to do quad mode stuffs
 
@@ -176,6 +189,15 @@ APB_SpiFlashInterface::APB_SpiFlashInterface(volatile APB_SPIHostInterface* devi
 		}
 		else
 			g_log("QE bit already set\n");
+	}
+}
+
+const char* APB_SpiFlashInterface::GetMicronPartName(uint16_t npart)
+{
+	switch(npart)
+	{
+		case 0xbb19:	return "MT25QU256";
+		default:		return "Unknown";
 	}
 }
 
@@ -214,6 +236,54 @@ const char* APB_SpiFlashInterface::GetWinbondPartName(uint16_t npart)
 		case 0xaa21:	return "W25N01GV";			//TODO: NAND is probably not fully supported
 		default:		return "Unknown";
 	}
+}
+
+/**
+	@brief Run a test to verify SPI bus signal integrity
+ */
+bool APB_SpiFlashInterface::SFDPMultipleReadTest(uint32_t niter)
+{
+	g_log("SFDP multiple read test (%u iterations)\n", niter);
+	LogIndenter li(g_log);
+
+	//Read SFDP data
+	uint8_t golden[512] = {0};
+	SetCS(0);
+	SendByte(0x5a);
+	SendByte(0x00);				//3-byte address regardless of addressing mode
+	SendByte(0x00);
+	SendByte(0x00);
+	SendByte(0x00);				//dummy byte
+	for(uint16_t i=0; i<512; i++)
+		golden[i] = ReadByte();
+	SetCS(1);
+
+	for(uint32_t i=0; i<niter; i++)
+	{
+		uint8_t test[512] = {0};
+		SetCS(0);
+		SendByte(0x5a);
+		SendByte(0x00);				//3-byte address regardless of addressing mode
+		SendByte(0x00);
+		SendByte(0x00);
+		SendByte(0x00);				//dummy byte
+		for(uint16_t j=0; j<512; j++)
+			test[j] = ReadByte();
+		SetCS(1);
+
+		for(uint32_t j=0; j<512; j++)
+		{
+			if(test[j] != golden[j])
+			{
+				g_log(Logger::ERROR, "Fail on iteration %u, byte %u: got %02x, expected %02x\n",
+					i, j, test[j], golden[j]);
+				return false;
+			}
+		}
+	}
+
+	g_log("Test passed\n");
+	return true;
 }
 
 void APB_SpiFlashInterface::ReadSFDP()
@@ -567,6 +637,59 @@ uint8_t APB_SpiFlashInterface::GetConfigRegister()
 	SetCS(1);
 	return ret;
 }
+
+/**
+	@brief Get the nonvolatile configuration register (may be Micron specific, TBD)
+ */
+uint16_t APB_SpiFlashInterface::GetNVCR()
+{
+	uint8_t nvcr[2] = {0};
+
+	SetCS(0);
+	SendByte(0xb5);
+	nvcr[0] = ReadByte();
+	nvcr[1] = ReadByte();
+	SetCS(1);
+
+	return (nvcr[1] << 8) | nvcr[0];
+}
+
+/**
+	@brief Write the nonvolatile configuration register (may be Micron specific, TBD)
+ */
+void APB_SpiFlashInterface::WriteNVCR(uint16_t nvcr)
+{
+	WriteEnable();
+
+	SetCS(0);
+	SendByte(0xb1);
+	SendByte(nvcr & 0xff);
+	SendByte(nvcr >> 8);
+	SetCS(1);
+
+	WriteDisable();
+
+	WaitUntilIdle();
+}
+
+/**
+	@brief Write the volatile configuration register (may be Micron specific, TBD)
+ */
+void APB_SpiFlashInterface::WriteVCR(uint16_t vcr)
+{
+	WriteEnable();
+
+	SetCS(0);
+	SendByte(0x81);
+	SendByte(vcr & 0xff);
+	SendByte(vcr >> 8);
+	SetCS(1);
+
+	WriteDisable();
+
+	WaitUntilIdle();
+}
+
 
 #ifdef HAVE_ITCM
 __attribute__((section(".tcmtext")))

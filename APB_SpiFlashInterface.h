@@ -2,7 +2,7 @@
 *                                                                                                                      *
 * embedded-utils                                                                                                       *
 *                                                                                                                      *
-* Copyright (c) 2020-2024 Andrew D. Zonenberg                                                                          *
+* Copyright (c) 2020-2025 Andrew D. Zonenberg                                                                          *
 * All rights reserved.                                                                                                 *
 *                                                                                                                      *
 * Redistribution and use in source and binary forms, with or without modification, are permitted provided that the     *
@@ -64,10 +64,15 @@ public:
 	}
 
 	bool EraseSector(uint32_t start);
+	bool SFDPMultipleReadTest(uint32_t niter);
 
 	uint8_t GetStatusRegister1();
 	uint8_t GetStatusRegister2();
 	uint8_t GetConfigRegister();
+
+	uint16_t GetNVCR();
+	void WriteNVCR(uint16_t nvcr);
+	void WriteVCR(uint16_t vcr);
 
 	uint32_t GetEraseBlockSize()
 	{ return m_sectorSize; }
@@ -157,6 +162,7 @@ protected:
 	enum vendor_t
 	{
 		VENDOR_CYPRESS	= 0x01,
+		VENDOR_MICRON	= 0x20,
 		VENDOR_PUYA		= 0x85,
 		VENDOR_ISSI 	= 0x9d,
 		VENDOR_WINBOND	= 0xef
@@ -164,6 +170,7 @@ protected:
 
 	//TODO: non-DMA option
 
+	const char* GetMicronPartName(uint16_t npart);
 	const char* GetCypressPartName(uint16_t npart);
 	const char* GetISSIPartName(uint16_t npart);
 	const char* GetWinbondPartName(uint16_t npart);
