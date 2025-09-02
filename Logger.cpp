@@ -2,7 +2,7 @@
 *                                                                                                                      *
 * embedded-utils                                                                                                       *
 *                                                                                                                      *
-* Copyright (c) 2020-2024 Andrew D. Zonenberg                                                                          *
+* Copyright (c) 2020-2025 Andrew D. Zonenberg                                                                          *
 * All rights reserved.                                                                                                 *
 *                                                                                                                      *
 * Redistribution and use in source and binary forms, with or without modification, are permitted provided that the     *
@@ -31,6 +31,7 @@
 #include "Logger.h"
 
 #ifdef LOGGER_USE_RTC_TIMESTAMP
+#include <stm32.h>
 #include <peripheral/RTC.h>
 #endif
 
