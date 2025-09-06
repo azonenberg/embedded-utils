@@ -27,122 +27,72 @@
 *                                                                                                                      *
 ***********************************************************************************************************************/
 
-#ifndef APB_SpiFlashInterface_h
-#define APB_SpiFlashInterface_h
+#ifndef SpiFlashInterfaceBase_h
+#define SpiFlashInterfaceBase_h
 
-#if !defined(SIMULATION) && !defined(SOFTCORE_NO_IRQ)
-
-#include <APB_SPIHostInterface.h>
-
-#define FLASH_USE_MDMA
-
-#ifdef FLASH_USE_MDMA
-#include <peripheral/MDMA.h>
-#endif
-
-#include <embedded-utils/SpiFlashInterfaceBase.h>
-
-/**
-	@file
-	@brief Declaration of APB_SpiFlashInterface
- */
-class APB_SpiFlashInterface : public SpiFlashInterfaceBase
+class SpiFlashInterfaceBase
 {
 public:
-	APB_SpiFlashInterface(volatile APB_SPIHostInterface* device, uint32_t clkdiv);
+	SpiFlashInterfaceBase();
 
-	void WriteEnable()
-	{
-		SetCS(0);
-		SendByte(0x06);
-		SetCS(1);
-	}
-
-	void WriteDisable()
-	{
-		SetCS(0);
-		SendByte(0x04);
-		SetCS(1);
-	}
-
-	bool EraseSector(uint32_t start);
-	bool SFDPMultipleReadTest(uint32_t niter);
-
-	uint8_t GetStatusRegister1();
-	uint8_t GetStatusRegister2();
-	uint8_t GetConfigRegister();
-
-	uint16_t GetNVCR();
-	void WriteNVCR(uint16_t nvcr);
-	void WriteVCR(uint16_t vcr);
-
-	uint32_t GetEraseBlockSize()
+	uint32_t GetSectorSize()
 	{ return m_sectorSize; }
 
-	void ReadData(
-		uint32_t addr,
-		uint8_t* data,
-		uint32_t len
-
-		#ifdef FLASH_USE_MDMA
-			, MDMAChannel* dmaChannel = nullptr
-		#endif
-		);
-
-	bool WriteData(uint32_t addr, const uint8_t* data, uint32_t len);
-
-	uint32_t GetMinWriteBlockSize()
-	{ return 16; }
-
-	uint32_t GetMaxWriteBlockSize()
-	{ return m_maxWriteBlock; }
-
-	uint32_t GetCapacity()
+	uint32_t GetFlashSize()
 	{ return m_capacityBytes; }
 
 protected:
 
-	virtual void WaitUntilIdle()
+	//CFI parsing
+	bool ParseCFI(uint8_t* cfi);
+
+	//SFDP parsing
+	void ReadSFDP();
+	virtual void ReadSFDPBlock(uint32_t addr, uint8_t* buf, uint32_t size) =0;
+	void ReadSFDPParameter(uint16_t type, uint32_t offset, uint8_t nwords, uint8_t major, uint8_t minor);
+	void ReadSFDPParameter_JEDEC(uint32_t* param, uint8_t nwords, uint8_t major, uint8_t minor);
+	uint32_t GetEraseTime(uint32_t code);
+
+	//Address mode
+	enum
 	{
-		#ifdef QSPI_CACHE_WORKAROUND
+		ADDR_3BYTE,
+		ADDR_4BYTE
+	} m_addressLength;
 
-			asm("dmb st");
-
-			while(true)
-			{
-				uint32_t va = m_device->status;
-				uint32_t vb = m_device->status2;
-				if(!va && !vb)
-					break;
-			}
-
-		#else
-			while(m_device->status)
-			{}
-		#endif
-	}
-
-	void SetCS(bool b)
-	{ m_device->cs_n = b; }
-
-	void SendByte(uint8_t data)
+	enum vendor_t
 	{
-		m_device->data = data;
-		WaitUntilIdle();
-	}
+		VENDOR_CYPRESS	= 0x01,
+		VENDOR_MICRON	= 0x20,
+		VENDOR_PUYA		= 0x85,
+		VENDOR_ISSI 	= 0x9d,
+		VENDOR_WINBOND	= 0xef
+	} m_vendor;
 
-	uint8_t ReadByte()
-	{
-		m_device->data = 0;
-		WaitUntilIdle();
+	//TODO: non-DMA option
 
-		return m_device->data;
-	}
+	const char* GetMicronPartName(uint16_t npart);
+	const char* GetCypressPartName(uint16_t npart);
+	const char* GetISSIPartName(uint16_t npart);
+	const char* GetWinbondPartName(uint16_t npart);
 
-	volatile APB_SPIHostInterface*	m_device;
-	virtual void ReadSFDPBlock(uint32_t addr, uint8_t* buf, uint32_t size);
+	uint32_t m_capacityBytes;
+	uint32_t m_maxWriteBlock;
+
+	//Erase configuration
+	uint8_t m_sectorEraseOpcode;
+	uint32_t m_sectorSize;
+
+	//Indicates peripheral is quad capable
+	bool m_quadCapable;
+
+	//Normal fast read instruction
+	uint8_t m_fastReadInstruction;
+
+	//Quad read instruction
+	bool m_quadReadAvailable;
+	uint8_t m_quadReadInstruction;
+	uint8_t m_quadReadDummyClocks;
 };
-
-#endif
 
 #endif

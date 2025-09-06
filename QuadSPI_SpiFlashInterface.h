@@ -27,120 +27,32 @@
 *                                                                                                                      *
 ***********************************************************************************************************************/
 
-#ifndef APB_SpiFlashInterface_h
-#define APB_SpiFlashInterface_h
+#ifndef QuadSPI_SpiFlashInterface_h
+#define QuadSPI_SpiFlashInterface_h
 
-#if !defined(SIMULATION) && !defined(SOFTCORE_NO_IRQ)
+#ifdef HAVE_QUADSPI
 
-#include <APB_SPIHostInterface.h>
+#include <peripheral/QuadSPI.h>
+#include "SpiFlashInterfaceBase.h"
 
-#define FLASH_USE_MDMA
-
-#ifdef FLASH_USE_MDMA
-#include <peripheral/MDMA.h>
-#endif
-
-#include <embedded-utils/SpiFlashInterfaceBase.h>
-
-/**
-	@file
-	@brief Declaration of APB_SpiFlashInterface
- */
-class APB_SpiFlashInterface : public SpiFlashInterfaceBase
+class QuadSPI_SpiFlashInterface
+	: public QuadSPI
+	, public SpiFlashInterfaceBase
 {
 public:
-	APB_SpiFlashInterface(volatile APB_SPIHostInterface* device, uint32_t clkdiv);
+	QuadSPI_SpiFlashInterface(volatile quadspi_t* lane, uint32_t sizeBytes, uint8_t prescale);
 
-	void WriteEnable()
-	{
-		SetCS(0);
-		SendByte(0x06);
-		SetCS(1);
-	}
+	void Discover();
 
-	void WriteDisable()
-	{
-		SetCS(0);
-		SendByte(0x04);
-		SetCS(1);
-	}
-
-	bool EraseSector(uint32_t start);
-	bool SFDPMultipleReadTest(uint32_t niter);
-
-	uint8_t GetStatusRegister1();
-	uint8_t GetStatusRegister2();
-	uint8_t GetConfigRegister();
-
-	uint16_t GetNVCR();
-	void WriteNVCR(uint16_t nvcr);
-	void WriteVCR(uint16_t vcr);
-
-	uint32_t GetEraseBlockSize()
-	{ return m_sectorSize; }
-
-	void ReadData(
-		uint32_t addr,
-		uint8_t* data,
-		uint32_t len
-
-		#ifdef FLASH_USE_MDMA
-			, MDMAChannel* dmaChannel = nullptr
-		#endif
-		);
-
-	bool WriteData(uint32_t addr, const uint8_t* data, uint32_t len);
-
-	uint32_t GetMinWriteBlockSize()
-	{ return 16; }
-
-	uint32_t GetMaxWriteBlockSize()
-	{ return m_maxWriteBlock; }
-
-	uint32_t GetCapacity()
-	{ return m_capacityBytes; }
+	void EraseSector(uint8_t* addr);
+	void Write(uint8_t* addr, const uint8_t* buf, uint32_t size);
+	void MemoryMap();
 
 protected:
-
-	virtual void WaitUntilIdle()
-	{
-		#ifdef QSPI_CACHE_WORKAROUND
-
-			asm("dmb st");
-
-			while(true)
-			{
-				uint32_t va = m_device->status;
-				uint32_t vb = m_device->status2;
-				if(!va && !vb)
-					break;
-			}
-
-		#else
-			while(m_device->status)
-			{}
-		#endif
-	}
-
-	void SetCS(bool b)
-	{ m_device->cs_n = b; }
-
-	void SendByte(uint8_t data)
-	{
-		m_device->data = data;
-		WaitUntilIdle();
-	}
-
-	uint8_t ReadByte()
-	{
-		m_device->data = 0;
-		WaitUntilIdle();
-
-		return m_device->data;
-	}
-
-	volatile APB_SPIHostInterface*	m_device;
 	virtual void ReadSFDPBlock(uint32_t addr, uint8_t* buf, uint32_t size);
+
+	void PollUntilWriteDone();
+	void EnableQuadMode();
 };
 
 #endif
