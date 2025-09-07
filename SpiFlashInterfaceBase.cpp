@@ -174,6 +174,7 @@ const char* SpiFlashInterfaceBase::GetWinbondPartName(uint16_t npart)
 	switch(npart)
 	{
 		case 0x4014:	return "W25Q80BV";
+		case 0x4016:	return "W25Q32FV/JV";
 		case 0x4018:	return "W25Q128FV/JV";
 		case 0x4019:	return "W25R256JV";
 		case 0x6015:	return "W25Q16DW";

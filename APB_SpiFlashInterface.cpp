@@ -39,12 +39,20 @@ APB_SpiFlashInterface::APB_SpiFlashInterface(volatile APB_SPIHostInterface* devi
 	SetCS(1);
 	g_logTimer.Sleep(500);
 
-	//Reset the flash
+	//If it's powered down, wake it up (Winbond)
+	SetCS(0);
+	SendByte(0xab);
+	SendByte(0x00);
+	SendByte(0x00);
+	SendByte(0x00);
+	SendByte(0x00);
+	SetCS(1);
+	g_logTimer.Sleep(250);
+
+	//Reset the flash and wait a while
 	SetCS(0);
 	SendByte(0xf0);
 	SetCS(1);
-
-	//Wait a bit
 	g_logTimer.Sleep(250);
 
 	//Set the clock divider
