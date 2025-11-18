@@ -66,11 +66,13 @@ protected:
 		VENDOR_MICRON	= 0x20,
 		VENDOR_PUYA		= 0x85,
 		VENDOR_ISSI 	= 0x9d,
+		VENDOR_MACRONIX	= 0xc2,
 		VENDOR_WINBOND	= 0xef
 	} m_vendor;
 
 	//TODO: non-DMA option
 
+	const char* GetMacronixPartName(uint16_t npart);
 	const char* GetMicronPartName(uint16_t npart);
 	const char* GetCypressPartName(uint16_t npart);
 	const char* GetISSIPartName(uint16_t npart);

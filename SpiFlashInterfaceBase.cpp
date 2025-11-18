@@ -67,6 +67,11 @@ bool SpiFlashInterfaceBase::ParseCFI(uint8_t* cfi)
 			part = GetMicronPartName(npart);
 			break;
 
+		case VENDOR_MACRONIX:
+			vendor = "Macronix";
+			part = GetMacronixPartName(npart);
+			break;
+
 		case VENDOR_ISSI:
 			vendor = "ISSI";
 			part = GetISSIPartName(npart);
@@ -144,6 +149,15 @@ const char* SpiFlashInterfaceBase::GetMicronPartName(uint16_t npart)
 	switch(npart)
 	{
 		case 0xbb19:	return "MT25QU256";
+		default:		return "Unknown";
+	}
+}
+
+const char* SpiFlashInterfaceBase::GetMacronixPartName(uint16_t npart)
+{
+	switch(npart)
+	{
+		case 0x201a:	return "MX25L512";
 		default:		return "Unknown";
 	}
 }

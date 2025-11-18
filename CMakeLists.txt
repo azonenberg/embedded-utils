@@ -10,6 +10,7 @@ add_library(embedded-utils STATIC
 	${APB_SOURCES}
 	CharacterDevice.cpp
 	Logger.cpp
+	OctoSPI_SpiFlashInterface.cpp
 	QuadSPI_SpiFlashInterface.cpp
 	SpiFlashInterfaceBase.cpp
 	StringHelpers.cpp
