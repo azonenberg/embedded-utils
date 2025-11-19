@@ -40,7 +40,8 @@ OctoSPI_SpiFlashInterface::OctoSPI_SpiFlashInterface(volatile octospi_t* lane, u
 {
 	//OCTOSPI block is always quad capable
 	//TODO: arguments to say we didn't wire up the board in quad mode??
-	m_quadCapable = true;
+	//m_quadCapable = true;
+	m_quadCapable = false;
 
 	//Configure it
 	SetDoubleRateMode(false);
@@ -66,6 +67,9 @@ void OctoSPI_SpiFlashInterface::SendSingleByteCommand(uint8_t cmd)
 {
 	WaitIdle();
 
+	uint32_t ccr = m_lane->CCR;
+	uint32_t wccr = m_lane->WCCR;
+
 	//Instruction, no address or data
 	SetInstructionMode(MODE_SINGLE, 1);
 	SetAddressMode(MODE_NONE, 0);
@@ -75,6 +79,11 @@ void OctoSPI_SpiFlashInterface::SendSingleByteCommand(uint8_t cmd)
 	m_lane->CR = (m_lane->CR & ~OCTOSPI_FMODE_MASK) | OCTOSPI_FMODE_INDIRECT_WRITE;
 	m_lane->DLR = 0;
 	m_lane->IR = cmd;
+
+	//Restore config after the transaction finishes
+	WaitIdle();
+	m_lane->CCR = ccr;
+	m_lane->WCCR = wccr;
 }
 
 void OctoSPI_SpiFlashInterface::Discover()
@@ -113,7 +122,7 @@ void OctoSPI_SpiFlashInterface::Discover()
 	if(shouldReadSFDP)
 		ReadSFDP();
 
-	SetSizeBytes(m_capacityBytes);
+	//SetSizeBytes(m_capacityBytes);
 
 	//Enable quad mode bit in volatile configuration register.
 	EnableQuadMode();
@@ -135,14 +144,16 @@ void OctoSPI_SpiFlashInterface::ReadSFDPBlock(uint32_t addr, uint8_t* buf, uint3
 
 void OctoSPI_SpiFlashInterface::EnableQuadMode()
 {
-	/*
+	WaitIdle();
+
+	SetAddressMode(OctoSPI::MODE_NONE, 0);
+	SetDataMode(OctoSPI::MODE_SINGLE);
+	SetDummyCycleCount(0);
+
 	//winbond flash has quad enable as bit 1 of status register 2
 	//TODO: this is for w25q80bv may not be universal?
 	if(m_vendor == VENDOR_WINBOND)
 	{
-		SetAddressMode(OctoSPI::MODE_NONE, 0);
-		SetDataMode(OctoSPI::MODE_SINGLE);
-
 		//Read status register as two separate read commands
 		uint8_t sr[2];
 		BlockingRead(0x05, 0, &sr[0], 1);
@@ -157,7 +168,32 @@ void OctoSPI_SpiFlashInterface::EnableQuadMode()
 		else
 			g_log("QE bit already set\n");
 	}
-	*/
+
+	//Macronix has it in the main status register
+	if(m_vendor == VENDOR_MACRONIX)
+	{
+		//See if quad mode is already set
+		uint8_t status = 0;
+		BlockingRead(0x05, 0, &status, 1);
+		if(status & 0x40)
+		{
+			g_log("QE bit already set (initial SR %02x)\n", status);
+			return;
+		}
+		else
+			g_log("QE not set (initial SR %02x)\n", status);
+
+		//Write enable
+		SendSingleByteCommand(0x06);
+		BlockingWrite8(0x01, 0, 0x40);
+
+		//Verify it took effect
+		BlockingRead(0x05, 0, &status, 1);
+		if(status & 0x40)
+			g_log("QE bit now set (SR %02x)\n", status);
+		else
+			g_log(Logger::ERROR, "QE bit failed to set (SR %02x)\n", status);
+	}
 }
 
 void OctoSPI_SpiFlashInterface::MemoryMap()
@@ -182,15 +218,26 @@ void OctoSPI_SpiFlashInterface::MemoryMap()
 
 void OctoSPI_SpiFlashInterface::EraseSector(uint8_t* addr)
 {
-	/*
 	//Turn off memory map mode if active
 	Abort();
 
-	//Save existing config
-	uint32_t ccr = m_ccrBase;
-
 	//Send write enable with no arguments
 	SendSingleByteCommand(0x06);
+
+	//Make sure write enable latch is set
+	uint8_t status = 0;
+	for(int i=0; i<5; i++)
+	{
+		BlockingRead(0x05, 0, &status, 1);
+		if(status & 2)
+			break;
+	}
+	if( (status & 2) == 0)
+	{
+		g_log(Logger::ERROR,
+			"Sector erase is probably going to fail, status register was %02x after enabling write\n",
+			status);
+	}
 
 	//Erase the block (in x1 mode with no data)
 	SetAddressMode(OctoSPI::MODE_SINGLE, 3);
@@ -199,31 +246,31 @@ void OctoSPI_SpiFlashInterface::EraseSector(uint8_t* addr)
 	BlockingWrite(m_sectorEraseOpcode, reinterpret_cast<uint32_t>(addr) & 0x0fffffff, nullptr, 0);
 	PollUntilWriteDone();
 
-	m_ccrBase = ccr;
-
 	//Write disable is automatic, no need to do this manually
 	//Return to normal operation mode
-	MemoryMap();
+	//MemoryMap();
 
 	//Flush cache
-	CleanDataCache(addr, m_sectorSize);
-	*/
+	//CleanDataCache(addr, m_sectorSize);
 }
 
 void OctoSPI_SpiFlashInterface::PollUntilWriteDone()
 {
-	/*
+	uint32_t ccr = m_lane->CCR;
+	uint32_t wccr = m_lane->WCCR;
+
 	SetAddressMode(OctoSPI::MODE_NONE, 0);
 	SetDataMode(OctoSPI::MODE_SINGLE);
 	uint8_t status = 1;
 	while(status & 3)	//we want write enable latch and busy bits clear
 		BlockingRead(0x05, 0, &status, 1);
-	*/
+
+	m_lane->CCR = ccr;
+	m_lane->WCCR = wccr;
 }
 
 void OctoSPI_SpiFlashInterface::Write(uint8_t* addr, const uint8_t* buf, uint32_t size)
 {
-	/*
 	//Turn off memory map mode if active
 	Abort();
 
@@ -231,6 +278,7 @@ void OctoSPI_SpiFlashInterface::Write(uint8_t* addr, const uint8_t* buf, uint32_
 	//(need to account for page alignment long term)
 	SetDummyCycleCount(0);
 	const uint32_t maxPage = 32;
+	SetAddressMode(MODE_SINGLE, 3);
 	for(size_t base = 0; base < size; base += maxPage)
 	{
 		uint32_t bytesLeft = size - base;
@@ -242,10 +290,11 @@ void OctoSPI_SpiFlashInterface::Write(uint8_t* addr, const uint8_t* buf, uint32_
 		SendSingleByteCommand(0x06);
 
 		//Do the actual write
-		BlockingWrite(0x02, reinterpret_cast<uint32_t>(addr + base) & 0x0fffffff, buf + base, bytesLeft);
+		BlockingWrite(0x02, reinterpret_cast<uint32_t>(addr + base) & 0x0fffffff, buf + base, blockSize);
 		PollUntilWriteDone();
 	}
 
+	/*
 	//Write disable is automatic, no need to do this manually
 	//Return to normal operation mode
 	MemoryMap();
