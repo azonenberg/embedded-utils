@@ -96,14 +96,16 @@ void OctoSPI_SpiFlashInterface::Discover()
 
 	//Reset it, then wait a bit longer (use several different resets depending on what we might have)
 	SendSingleByteCommand(0xf0);
-	g_logTimer.Sleep(250);
+	g_logTimer.Sleep(10);
 	SendSingleByteCommand(0xff);
-	g_logTimer.Sleep(250);
+	g_logTimer.Sleep(10);
 	SendSingleByteCommand(0xf5);	//Macronix RSTQIO
-	g_logTimer.Sleep(250);
+	g_logTimer.Sleep(10);
 
 	SendSingleByteCommand(0x66);	//Macronix RSTEN
 	SendSingleByteCommand(0x99);	//Macronix RST
+
+	//Macronix wants 25ms before erase operations, be safe and wait that long before doing anything
 	g_logTimer.Sleep(250);
 
 	//Enable delay bypass
@@ -256,6 +258,8 @@ void OctoSPI_SpiFlashInterface::EraseSector(uint8_t* addr)
 
 void OctoSPI_SpiFlashInterface::PollUntilWriteDone()
 {
+	WaitIdle();
+
 	uint32_t ccr = m_lane->CCR;
 	uint32_t wccr = m_lane->WCCR;
 
