@@ -245,7 +245,7 @@ void OctoSPI_SpiFlashInterface::EraseSector(uint8_t* addr)
 	SetAddressMode(OctoSPI::MODE_SINGLE, 3);
 	SetDataMode(OctoSPI::MODE_NONE);
 	SetDummyCycleCount(0);
-	BlockingWrite(m_sectorEraseOpcode, reinterpret_cast<uint32_t>(addr) & 0x0fffffff, nullptr, 0);
+	BlockingWrite(m_sectorEraseOpcode, reinterpret_cast<uintptr_t>(addr) & 0x0fffffff, nullptr, 0);
 	PollUntilWriteDone();
 
 	//Write disable is automatic, no need to do this manually
@@ -294,7 +294,7 @@ void OctoSPI_SpiFlashInterface::Write(uint8_t* addr, const uint8_t* buf, uint32_
 		SendSingleByteCommand(0x06);
 
 		//Do the actual write
-		BlockingWrite(0x02, reinterpret_cast<uint32_t>(addr + base) & 0x0fffffff, buf + base, blockSize);
+		BlockingWrite(0x02, reinterpret_cast<uintptr_t>(addr + base) & 0x0fffffff, buf + base, blockSize);
 		PollUntilWriteDone();
 	}
 

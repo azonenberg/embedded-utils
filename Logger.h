@@ -2,7 +2,7 @@
 *                                                                                                                      *
 * embedded-utils                                                                                                       *
 *                                                                                                                      *
-* Copyright (c) 2020-2024 Andrew D. Zonenberg                                                                          *
+* Copyright (c) 2020-2025 Andrew D. Zonenberg                                                                          *
 * All rights reserved.                                                                                                 *
 *                                                                                                                      *
 * Redistribution and use in source and binary forms, with or without modification, are permitted provided that the     *
@@ -33,7 +33,7 @@
 #include "CharacterDevice.h"
 
 //For now, assume any ARM platform is STM32 and anything else is antikernel-ipcores
-#ifdef __arm__
+#if defined(__arm__) || defined(__aarch64__)
 #include <peripheral/Timer.h>
 #else
 #include <APB_Timer.h>
@@ -82,6 +82,15 @@ public:
 			return;
 
 		Timestamp(NORMAL);
+
+		#ifdef LOGGER_CPU_TAG
+			#ifdef MULTICORE
+				m_target->Printf("[" LOGGER_CPU_TAG "] ", GetCurrentCore());
+			#else
+				m_target->Printf("[" LOGGER_CPU_TAG "] ");
+			#endif
+		#endif
+
 		PrintIndent();
 
 		__builtin_va_list list;
@@ -124,6 +133,13 @@ public:
 
 	void UpdateOffset();
 	bool UpdateOffset(uint32_t threshold);
+
+	//Low level APIs for custom formatting
+	void WriteRaw(const char* str)
+	{
+		if(m_target)
+			m_target->WritePadded(str, 0, ' ', 0);
+	}
 
 protected:
 	void Timestamp();
