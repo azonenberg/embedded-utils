@@ -128,6 +128,9 @@ void OctoSPI_SpiFlashInterface::Discover()
 
 	//Enable quad mode bit in volatile configuration register.
 	EnableQuadMode();
+
+	//Exit 4-byte mode (if we were)
+	SendSingleByteCommand(0xe9);
 }
 
 void OctoSPI_SpiFlashInterface::ReadSFDPBlock(uint32_t addr, uint8_t* buf, uint32_t size)
@@ -273,6 +276,24 @@ void OctoSPI_SpiFlashInterface::PollUntilWriteDone()
 	m_lane->WCCR = wccr;
 }
 
+uint8_t OctoSPI_SpiFlashInterface::ReadStatusRegister()
+{
+	WaitIdle();
+
+	uint32_t ccr = m_lane->CCR;
+	uint32_t wccr = m_lane->WCCR;
+
+	SetAddressMode(OctoSPI::MODE_NONE, 0);
+	SetDataMode(OctoSPI::MODE_SINGLE);
+	uint8_t status = 0;
+	BlockingRead(0x05, 0, &status, 1);
+
+	m_lane->CCR = ccr;
+	m_lane->WCCR = wccr;
+
+	return status;
+}
+
 void OctoSPI_SpiFlashInterface::Write(uint8_t* addr, const uint8_t* buf, uint32_t size)
 {
 	//Turn off memory map mode if active
@@ -281,8 +302,7 @@ void OctoSPI_SpiFlashInterface::Write(uint8_t* addr, const uint8_t* buf, uint32_
 	//Write it in blocks of up to 32 bytes for now
 	//(need to account for page alignment long term)
 	SetDummyCycleCount(0);
-	const uint32_t maxPage = 32;
-	SetAddressMode(MODE_SINGLE, 3);
+	const uint32_t maxPage = 32;	//TODO: smaller blocks?
 	for(size_t base = 0; base < size; base += maxPage)
 	{
 		uint32_t bytesLeft = size - base;
@@ -294,6 +314,7 @@ void OctoSPI_SpiFlashInterface::Write(uint8_t* addr, const uint8_t* buf, uint32_
 		SendSingleByteCommand(0x06);
 
 		//Do the actual write
+		SetAddressMode(MODE_SINGLE, 3);
 		BlockingWrite(0x02, reinterpret_cast<uintptr_t>(addr + base) & 0x0fffffff, buf + base, blockSize);
 		PollUntilWriteDone();
 	}

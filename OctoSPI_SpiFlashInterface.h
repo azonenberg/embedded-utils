@@ -50,6 +50,7 @@ public:
 
 protected:
 	void SendSingleByteCommand(uint8_t cmd);
+	uint8_t ReadStatusRegister();
 
 	virtual void ReadSFDPBlock(uint32_t addr, uint8_t* buf, uint32_t size);
 
