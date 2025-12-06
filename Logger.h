@@ -73,6 +73,17 @@ public:
 		ERROR
 	};
 
+	#ifdef LOGGER_CPU_TAG
+	void PrintCPUTag()
+	{
+		#ifdef MULTICORE
+			m_target->Printf("[" LOGGER_CPU_TAG "] ", GetCurrentCore());
+		#else
+			m_target->Printf("[" LOGGER_CPU_TAG "] ");
+		#endif
+	}
+	#endif
+
 	/**
 		@brief Prints a log message
 	 */
@@ -84,11 +95,7 @@ public:
 		Timestamp(NORMAL);
 
 		#ifdef LOGGER_CPU_TAG
-			#ifdef MULTICORE
-				m_target->Printf("[" LOGGER_CPU_TAG "] ", GetCurrentCore());
-			#else
-				m_target->Printf("[" LOGGER_CPU_TAG "] ");
-			#endif
+			PrintCPUTag();
 		#endif
 
 		PrintIndent();
@@ -108,6 +115,11 @@ public:
 			return;
 
 		Timestamp(type);
+
+		#ifdef LOGGER_CPU_TAG
+			PrintCPUTag();
+		#endif
+
 		PrintIndent();
 
 		__builtin_va_list list;
