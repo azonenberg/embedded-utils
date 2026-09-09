@@ -2,7 +2,7 @@
 *                                                                                                                      *
 * embedded-utils                                                                                                       *
 *                                                                                                                      *
-* Copyright (c) 2020-2025 Andrew D. Zonenberg                                                                          *
+* Copyright (c) 2020-2026 Andrew D. Zonenberg                                                                          *
 * All rights reserved.                                                                                                 *
 *                                                                                                                      *
 * Redistribution and use in source and binary forms, with or without modification, are permitted provided that the     *
@@ -58,7 +58,7 @@ bool SpiFlashInterfaceBase::ParseCFI(uint8_t* cfi)
 	switch(m_vendor)
 	{
 		case VENDOR_CYPRESS:
-			vendor = "Cypress";
+			vendor = "Cypress / Infineon / Spansion";
 			part = GetCypressPartName(npart);
 			break;
 
@@ -169,6 +169,7 @@ const char* SpiFlashInterfaceBase::GetCypressPartName(uint16_t npart)
 		case 0x0217:	return "S25FS064S";
 		case 0x0219:	return "S25FL256S";
 		case 0x2018:	return "S25FL128S";
+		case 0x6017:	return "S25FL064L";
 		default:		return "Unknown";
 	}
 }
