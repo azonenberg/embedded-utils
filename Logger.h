@@ -153,6 +153,9 @@ public:
 			m_target->WritePadded(str, 0, ' ', 0);
 	}
 
+	void Flush()
+	{ m_target->Flush(); }
+
 protected:
 	void Timestamp();
 	void Timestamp(LogType type);
