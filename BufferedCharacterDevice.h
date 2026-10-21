@@ -2,7 +2,7 @@
 *                                                                                                                      *
 * embedded-utils                                                                                                       *
 *                                                                                                                      *
-* Copyright (c) 2020-2024 Andrew D. Zonenberg                                                                          *
+* Copyright (c) 2020-2026 Andrew D. Zonenberg                                                                          *
 * All rights reserved.                                                                                                 *
 *                                                                                                                      *
 * Redistribution and use in source and binary forms, with or without modification, are permitted provided that the     *
@@ -33,12 +33,19 @@
 #include <cstddef>
 #include "CharacterDevice.h"
 
-template<size_t rxbufsize, size_t txbufsize>
-class BufferedCharacterDevice : public CharacterDevice
+class BufferedCharacterDeviceBase : public CharacterDevice
 {
 public:
 
-	bool HasInput()
+	virtual bool HasInput() =0;
+};
+
+template<size_t rxbufsize, size_t txbufsize>
+class BufferedCharacterDevice : public BufferedCharacterDeviceBase
+{
+public:
+
+	virtual bool HasInput() override
 	{ return !m_rxFifo.IsEmpty(); }
 
 	virtual char BlockingRead() override
